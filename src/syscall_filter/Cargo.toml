@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 seccomp = "0.1.2"
-syscalls = ">=0.2"
+syscalls = "0.2.0"
