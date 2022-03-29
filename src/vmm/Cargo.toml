@@ -10,7 +10,7 @@ amd-sev = [ "codicon", "procfs", "reqwest", "serde", "serde_json", "sev", "ureq"
 [dependencies]
 libc = ">=0.2.39"
 vm-memory = { version = "0.7.0", features = ["backend-mmap"] }
-
+syscall_filter = { path = "../syscall_filter" }
 arch = { path = "../arch" }
 devices = { path = "../devices" }
 kernel = { path = "../kernel" }
