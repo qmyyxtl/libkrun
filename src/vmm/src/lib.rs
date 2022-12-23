@@ -28,6 +28,7 @@ pub mod vmm_config;
 mod linux;
 #[cfg(target_os = "linux")]
 use crate::linux::vstate;
+use std::io::Write;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -347,12 +348,26 @@ impl Vmm {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    // #[cfg(target_os = "linux")]
     fn log_boot_time(t0_ts: &TimestampUs) {
         let now_tm_us = TimestampUs::default();
 
         let boot_time_us = now_tm_us.time_us - t0_ts.time_us;
         let boot_time_cpu_us = now_tm_us.cputime_us - t0_ts.cputime_us;
+        // print!("hello");
+        // let file = std::fs::File::open("data.txt").unwrap();
+        // let mut file = std::fs::File::create("data.txt").expect("create failed");
+        // file.write_all(format!("Guest-boot-time = {:>6} us {} ms, {:>6} CPU us {} CPU ms",
+        // boot_time_us,
+        // boot_time_us / 1000,
+        // boot_time_cpu_us,
+        // boot_time_cpu_us / 1000).as_bytes());
+        // // println!("文件打开成功：{:?}",file);
+        // println!("{}",format!("Guest-boot-time = {:>6} us {} ms, {:>6} CPU us {} CPU ms",
+        // boot_time_us,
+        // boot_time_us / 1000,
+        // boot_time_cpu_us,
+        // boot_time_cpu_us / 1000));
         info!(
             "Guest-boot-time = {:>6} us {} ms, {:>6} CPU us {} CPU ms",
             boot_time_us,

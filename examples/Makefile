@@ -5,7 +5,7 @@ LDFLAGS_aarch64_Linux = -lkrun -lfdt
 LDFLAGS_arm64_Darwin = -L/opt/homebrew/lib -lkrun -lfdt
 CFLAGS_Linux = -O2 -g
 CFLAGS_Darwin = -O2 -g -I/opt/homebrew/include
-ROOTFS_DISTRO := fedora
+ROOTFS_DISTRO := ubuntu
 ROOTFS_DIR = rootfs_$(ROOTFS_DISTRO)
 
 .PHONY: clean rootfs
@@ -36,6 +36,9 @@ rootfs:
 	podman create --name libkrun_chroot_vm $(ROOTFS_DISTRO)
 	podman export libkrun_chroot_vm | tar xpf - -C $(ROOTFS_DIR)
 	podman rm libkrun_chroot_vm
-
+demo:
+	gcc -o main main.c $(LDFLAGS_$(ARCH)_$(OS))
+demo_seccomp:
+	gcc -o main main.c $(LDFLAGS_$(ARCH)_$(OS)) -lseccomp
 clean:
 	rm -rf chroot_vm $(ROOTFS_DIR)

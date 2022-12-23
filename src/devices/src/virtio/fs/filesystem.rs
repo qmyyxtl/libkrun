@@ -218,6 +218,7 @@ pub trait ZeroCopyWriter {
     /// from `f`. If the underlying read from `f` returns `0` then the implementation must return an
     /// error of the kind `io::ErrorKind::UnexpectedEof`.
     fn write_from(&mut self, f: &mut File, count: usize, off: u64) -> io::Result<usize>;
+    // fn write_from_m(&mut self, f: &mut File, count: usize, off: u64,addr: i64) -> io::Result<usize>;
 
     /// Copies exactly `count` bytes of data from `f` at offset `off` into `self`. `off + count`
     /// must be less than `u64::MAX`.
@@ -286,6 +287,9 @@ impl<'a, W: ZeroCopyWriter> ZeroCopyWriter for &'a mut W {
     fn write_from(&mut self, f: &mut File, count: usize, off: u64) -> io::Result<usize> {
         (**self).write_from(f, count, off)
     }
+    // fn write_from_m(&mut self, f: &mut File, count: usize, off: u64) -> io::Result<usize> {
+    //     (**self).write_from_m(f, count, off)
+    // }
     fn write_all_from(&mut self, f: &mut File, count: usize, off: u64) -> io::Result<()> {
         (**self).write_all_from(f, count, off)
     }

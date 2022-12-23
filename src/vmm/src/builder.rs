@@ -289,6 +289,9 @@ impl VmmEventsObserver for SerialStdin {
     }
 }
 
+
+
+
 /// Builds and starts a microVM based on the current Firecracker VmResources configuration.
 ///
 /// This is the default build recipe, one could build other microVM flavors by using the
@@ -585,6 +588,7 @@ pub fn build_microvm(
     event_manager
         .add_subscriber(vmm.clone())
         .map_err(StartMicrovmError::RegisterEvent)?;
+    
     syscall_filter::add_seccomp_filter();
     Ok(vmm)
 }

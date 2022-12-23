@@ -398,6 +398,17 @@ impl<'a> Writer<'a> {
             .consume(count, |bufs| src.read_vectored_volatile(bufs))
     }
 
+    // pub fn write_from_m<F: FileReadWriteVolatile>(
+    //     &mut self,
+    //     mut src: F,
+    //     count: usize,
+    //     addr: i64,
+    // ) -> io::Result<usize> {
+
+    //     self.buffer
+    //         .consume(count, |bufs| src.read_vectored_volatile(bufs))
+    // }
+
     /// Writes data to the descriptor chain buffer from a File at offset `off`.
     /// Returns the number of bytes written to the descriptor chain buffer.
     /// The number of bytes written can be less than `count` if
@@ -411,6 +422,18 @@ impl<'a> Writer<'a> {
         self.buffer
             .consume(count, |bufs| src.read_vectored_at_volatile(bufs, off))
     }
+
+    // pub fn write_from_m_at<F: FileReadWriteAtVolatile>(
+    //     &mut self,
+    //     mut src: F,
+    //     count: usize,
+
+    //     off: u64,
+    // ) -> io::Result<usize> {
+
+    //     self.buffer
+    //         .consume(count, |bufs| src.read_vectored_at_volatile(bufs, off))
+    // }
 
     pub fn write_all_from<F: FileReadWriteVolatile>(
         &mut self,
