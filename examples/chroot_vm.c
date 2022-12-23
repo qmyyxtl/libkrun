@@ -44,14 +44,14 @@ int main(int argc, char *const argv[])
     int err;
     int i;
 
-    if (argc < 3) {
-        printf("Invalid arguments\n");
-        printf("Usage: %s NEWROOT COMMAND [ARG...]\n", argv[0]);
-        return -1;
-    }
+    // if (argc < 3) {
+    //     printf("Invalid arguments\n");
+    //     printf("Usage: %s NEWROOT COMMAND [ARG...]\n", argv[0]);
+    //     return -1;
+    // }
 
     // Set the log level to "off".
-    err = krun_set_log_level(0);
+    err = krun_set_log_level(3);
     if (err) {
         errno = -err;
         perror("Error configuring log level");
@@ -67,14 +67,14 @@ int main(int argc, char *const argv[])
     }
 
     // Configure the number of vCPUs (1) and the amount of RAM (512 MiB).
-    if (err = krun_set_vm_config(ctx_id, 1, 512)) {
+    if (err = krun_set_vm_config(ctx_id, 1, 1024)) {
         errno = -err;
         perror("Error configuring the number of vCPUs and/or the amount of RAM");
         return -1;
     }
 
     // Use the first command line argument as the path to be used as root.
-    if (err = krun_set_root(ctx_id, argv[1])) {
+    if (err = krun_set_root(ctx_id, "rootfs_IWASM")) {
         errno = -err;
         perror("Error configuring root path");
         return -1;
@@ -127,7 +127,7 @@ int main(int argc, char *const argv[])
 
     // Use the second argument as the path of the binary to be executed in the isolated
     // context, relative to the root path.
-    if (err = krun_set_exec(ctx_id, argv[2], &argv[3], &envp[0])) {
+    if (err = krun_set_exec(ctx_id, "/iwasm", &argv[1], &envp[0])) {
         errno = -err;
         perror("Error configuring the parameters for the executable to be run");
         return -1;

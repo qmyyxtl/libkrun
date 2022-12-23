@@ -15,6 +15,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use std::collections::HashMap;
 
 use vm_memory::ByteValued;
 
@@ -301,6 +302,7 @@ pub struct PassthroughFs {
     // `cfg.writeback` is true and `init` was called with `FsOptions::WRITEBACK_CACHE`.
     writeback: AtomicBool,
 
+    fd_mm_map: HashMap<String, i64>, 
     cfg: Config,
 }
 
@@ -342,6 +344,9 @@ impl PassthroughFs {
             proc_self_fd,
 
             writeback: AtomicBool::new(false),
+
+            fd_mm_map: HashMap::new(),
+
             cfg,
         })
     }
@@ -1005,6 +1010,23 @@ impl FileSystem for PassthroughFs {
         // This is safe because write_from uses preadv64, so the underlying file descriptor
         // offset is not affected by this operation.
         let mut f = data.file.read().unwrap().try_clone().unwrap();
+
+        // let mut mm_addr = self.fd_mm_map.get(&String::from(f.as_raw_fd().to_string())).unwrap();
+        // let mut fd_mm_addr;
+        // match self.fd_mm_map.get(&f.as_raw_fd().to_string()){
+        //     Some(res) => {
+        //         fd_mm_addr = res;               
+        //     },
+        //     None => {
+        //         fd_mm_addr = &-1;
+        //     }
+        // }
+        // if *fd_mm_addr == -1{
+        //     return w.write_from(&mut f, size as usize, offset);
+        // }
+        // else {
+        //     return w.write_from(&mut f, size as usize, offset);
+        // }
         w.write_from(&mut f, size as usize, offset)
     }
 

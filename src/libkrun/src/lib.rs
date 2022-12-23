@@ -182,7 +182,7 @@ pub extern "C" fn krun_set_log_level(level: u32) -> i32 {
         4 => LevelFilter::Debug,
         _ => LevelFilter::Trace,
     };
-
+    // print!("set_log");
     if LOGGER
         .set_max_level(log_level)
         .configure(Some(format!("libkrun-{}", process::id())))

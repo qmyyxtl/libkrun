@@ -7,6 +7,7 @@ use std::ffi::CStr;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::mem::size_of;
+use std::collections::HashMap;
 
 use vm_memory::ByteValued;
 
@@ -44,6 +45,10 @@ impl<'a> ZeroCopyWriter for ZCWriter<'a> {
     fn write_from(&mut self, f: &mut File, count: usize, off: u64) -> io::Result<usize> {
         self.0.write_from_at(f, count, off)
     }
+    // fn write_from_m(&mut self, f: &mut File, count: usize, off: u64) -> io::Result<usize> {
+    //     self.0.write_from_m_at(f, count, off)
+    // }
+    
 }
 
 impl<'a> io::Write for ZCWriter<'a> {
@@ -58,10 +63,12 @@ impl<'a> io::Write for ZCWriter<'a> {
 
 pub struct Server<F: FileSystem + Sync> {
     fs: F,
+    // map: HashMap<u64,u64>
 }
 
 impl<F: FileSystem + Sync> Server<F> {
     pub fn new(fs: F) -> Server<F> {
+        // Server { fs ,map:HashMap::new()}
         Server { fs }
     }
 

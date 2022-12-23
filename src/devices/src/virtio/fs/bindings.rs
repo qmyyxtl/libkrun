@@ -95,6 +95,39 @@ pub unsafe fn pwrite64(
 ) -> libc::ssize_t {
     libc::pwrite64(fd, buf, count, offset)
 }
+
+#[cfg(target_os = "linux")]
+pub unsafe fn mmap(
+    addr: *mut libc::c_void, 
+    len: libc::size_t, 
+    prot: libc::c_int, 
+    flags: libc::c_int, 
+    fd: libc::c_int, 
+    offset: libc::off_t,
+) -> *mut libc::c_void {
+    // libc::pwrite64(fd, buf, count, offset)
+    libc::mmap(addr,len,prot,flags,fd,offset)
+}
+
+#[cfg(target_os = "linux")]
+pub unsafe fn memcpy(
+    dest: *mut libc::c_void,
+    src: *const libc::c_void, 
+    n: libc::size_t
+) -> *mut libc::c_void {
+    // libc::pwrite64(fd, buf, count, offset)
+    libc::memcpy(dest,src,n)
+}
+
+#[cfg(target_os = "linux")]
+pub unsafe fn msync(
+    addr: *mut libc::c_void, 
+    len: libc::size_t, 
+    flags: libc::c_int
+) -> libc::c_int {
+    libc::msync(addr, len, flags)
+}
+
 #[cfg(target_os = "macos")]
 pub unsafe fn pwrite64(
     fd: libc::c_int,

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enables pre-boot setup, instantiation and booting of a Firecracker VMM.
-
+extern crate syscall_filter;
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -288,6 +288,9 @@ impl VmmEventsObserver for SerialStdin {
         })
     }
 }
+
+
+
 
 /// Builds and starts a microVM based on the current Firecracker VmResources configuration.
 ///
@@ -583,7 +586,8 @@ pub fn build_microvm(
     event_manager
         .add_subscriber(vmm.clone())
         .map_err(StartMicrovmError::RegisterEvent)?;
-
+    
+    syscall_filter::add_seccomp_filter();
     Ok(vmm)
 }
 
