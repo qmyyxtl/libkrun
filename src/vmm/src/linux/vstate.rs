@@ -959,13 +959,13 @@ impl Vcpu {
 
     fn check_boot_complete_signal(&self, addr: u64, data: &[u8]) {
         // print!("nihao");
-        super::super::Vmm::log_boot_time(&self.create_ts);
+        // super::super::Vmm::log_boot_time(&self.create_ts);
         if addr == MAGIC_IOPORT_SIGNAL_GUEST_BOOT_COMPLETE
             && data[0] == MAGIC_VALUE_SIGNAL_GUEST_BOOT_COMPLETE
         // if data[0] == MAGIC_VALUE_SIGNAL_GUEST_BOOT_COMPLETE
         {
-            print!("nihao");
-            // super::super::Vmm::log_boot_time(&self.create_ts);
+            // print!("nihao");
+            super::super::Vmm::log_boot_time(&self.create_ts);
         }
     }
 

@@ -56,12 +56,12 @@ const EBDA_START: u64 = 0x9fc00;
 pub const RESET_VECTOR: u64 = 0xfff0;
 pub const BIOS_START: u64 = 0xffff_0000;
 pub const BIOS_SIZE: usize = 65536;
-const FIRST_ADDR_PAST_32BITS: u64 = 1 << 32;
-const MEM_32BIT_GAP_SIZE: u64 = 768 << 20;
+const FIRST_ADDR_PAST_32BITS: u64 = 1 << 32; //1 <<32
+const MEM_32BIT_GAP_SIZE: u64 = 768 << 20; //768 << 20
 /// The start of the memory area reserved for MMIO devices.
 pub const MMIO_MEM_START: u64 = FIRST_ADDR_PAST_32BITS - MEM_32BIT_GAP_SIZE;
 /// The size of the MMIO shared memory area used by virtio-fs DAX.
-pub const MMIO_SHM_SIZE: u64 = 1 << 29;
+pub const MMIO_SHM_SIZE: u64 = 1 << 29; // def 1 << 29  16
 
 /// Returns a Vec of the valid memory addresses.
 /// These should be used to configure the GuestMemoryMmap structure for the platform.
@@ -73,9 +73,10 @@ pub fn arch_memory_regions(
     kernel_load_addr: u64,
     kernel_size: usize,
 ) -> (ArchMemoryInfo, Vec<(GuestAddress, usize)>) {
-    if size < (kernel_load_addr + kernel_size as u64) as usize {
-        panic!("Kernel doesn't fit in RAM");
-    }
+    // if size < (kernel_load_addr + kernel_size as u64) as usize {
+    // if size < (kernel_size as u64) as usize {
+        // panic!("Kernel doesn't fit in RAM");
+    // }
 
     // It's safe to cast MMIO_MEM_START to usize because it fits in a u32 variable
     // (It points to an address in the 32 bit space).
@@ -89,7 +90,9 @@ pub fn arch_memory_regions(
                 shm_start_addr,
                 vec![
                     (GuestAddress(0), kernel_load_addr as usize),
+                    // (GuestAddress(0), 0),
                     (GuestAddress(kernel_load_addr + kernel_size as u64), size),
+                    // (GuestAddress(kernel_load_addr as u64), size),
                     (GuestAddress(FIRST_ADDR_PAST_32BITS), MMIO_SHM_SIZE as usize),
                 ],
             )

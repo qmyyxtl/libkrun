@@ -10,7 +10,7 @@ use vm_memory::VolatileSlice;
 
 use libc::{c_int, c_void, read, readv, size_t, write, writev};
 
-use super::bindings::{off64_t, pread64, preadv64, pwrite64, pwritev64, mmap,memcpy,msync};
+use super::bindings::{off64_t, pread64, preadv64, pwrite64, pwritev64, mmap,memcpy,msync,cwrite,lseek64,pcwrite};
 
 /// A trait for setting the size of a file.
 /// This is equivalent to File's `set_len` method, but
@@ -352,12 +352,13 @@ macro_rules! volatile_impl {
             fn write_at_volatile(&mut self, slice: VolatileSlice, offset: u64) -> Result<usize> {
                 // Safe because only bytes inside the slice are accessed and the kernel is expected
                 // to handle arbitrary memory for I/O.
+                // unsafe {lseek64(self.as_raw_fd(),offset as off64_t,libc::SEEK_SET);}
                 let ret = unsafe {
-                    pwrite64(
+                    pcwrite(
                         self.as_raw_fd(),
                         slice.as_ptr() as *const c_void,
                         slice.len(),
-                        offset as off64_t,
+                        offset as off64_t
                     )
                 };
 
@@ -384,7 +385,8 @@ macro_rules! volatile_impl {
             //             null_ptr,
             //             self.metadata().unwrap().len().try_into().unwrap(),
             //             libc::PROT_READ|libc::PROT_WRITE,
-            //             libc::MAP_SHARED,
+            //             // libc::MAP_SHARED,
+            //             libc::MAP_PRIVATE,
             //             self.as_raw_fd(),
             //             0
             //         )
@@ -393,8 +395,8 @@ macro_rules! volatile_impl {
             //     if m_addr != libc::MAP_FAILED {
             //         unsafe {memcpy(m_addr.offset(offset as isize),slice.as_ptr() as *const c_void,slice.len());}
                     
-            //         unsafe {msync(m_addr,self.metadata().unwrap().len().try_into().unwrap(),libc::MS_SYNC);}
-            //         unsafe {libc::free(m_addr);}
+            //         // unsafe {msync(m_addr,self.metadata().unwrap().len().try_into().unwrap(),libc::MS_SYNC);}
+            //         // unsafe {libc::free(m_addr);}
             //         Ok(slice.len() as usize)
             //     } else {
             //         Err(Error::last_os_error())
@@ -420,14 +422,19 @@ macro_rules! volatile_impl {
 
                 // Safe because only bytes inside the buffers are accessed and the kernel is
                 // expected to handle arbitrary memory for I/O.
-                let ret = unsafe {
-                    pwritev64(
+                unsafe {lseek64(self.as_raw_fd(),offset as off64_t,libc::SEEK_SET);}
+                let mut ret :isize = 0; 
+                for ivc in iovecs {
+                   let tmp = unsafe {
+                    cwrite(
                         self.as_raw_fd(),
-                        &iovecs[0],
-                        iovecs.len() as c_int,
-                        offset as off64_t,
+                        ivc.iov_base as *const libc::c_void,
+                        ivc.iov_len as usize
                     )
-                };
+                   };
+                   ret = ret + tmp ;
+                }
+                
                 if ret >= 0 {
                     Ok(ret as usize)
                 } else {
@@ -463,7 +470,8 @@ macro_rules! volatile_impl {
             //             null_ptr,
             //             self.metadata().unwrap().len().try_into().unwrap(),
             //             libc::PROT_READ|libc::PROT_WRITE,
-            //             libc::MAP_SHARED,
+            //             // libc::MAP_SHARED,
+            //             libc::MAP_PRIVATE,
             //             self.as_raw_fd(),
             //             0
             //         )
@@ -471,8 +479,8 @@ macro_rules! volatile_impl {
 
             //     if m_addr != libc::MAP_FAILED {
             //         unsafe {memcpy(m_addr.offset(offset as isize),iovecs[0].iov_base as *const c_void,iovecs[0].iov_len);}
-            //         unsafe {msync(m_addr,self.metadata().unwrap().len().try_into().unwrap(),libc::MS_SYNC);}
-            //         unsafe {libc::free(m_addr);}
+            //         // unsafe {msync(m_addr,self.metadata().unwrap().len().try_into().unwrap(),libc::MS_SYNC);}
+            //         // unsafe {libc::free(m_addr);}
             //         Ok(iovecs[0].iov_len as usize)
             //     } else {
             //         Err(Error::last_os_error())

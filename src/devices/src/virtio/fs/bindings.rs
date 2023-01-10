@@ -147,6 +147,32 @@ pub unsafe fn pwritev64(
 ) -> libc::ssize_t {
     libc::pwritev64(fd, iov, iovcnt, offset)
 }
+
+#[cfg(target_os = "linux")]
+pub unsafe fn cwrite(
+    fd: libc::c_int,
+    buf: *const libc::c_void,
+    count: libc::size_t,
+) -> libc::ssize_t {
+    // libc::lseek64(fd, offset, libc::SEEK_SET);
+    libc::write(fd, buf,count)
+}
+
+#[cfg(target_os = "linux")]
+pub unsafe fn pcwrite(
+    fd: libc::c_int,
+    buf: *const libc::c_void,
+    count: libc::size_t,
+    offset: libc::off_t
+) -> libc::ssize_t {
+    libc::lseek64(fd, offset, libc::SEEK_SET);
+    libc::write(fd, buf,count)
+}
+
+
+
+
+
 #[cfg(target_os = "macos")]
 pub unsafe fn pwritev64(
     fd: libc::c_int,
