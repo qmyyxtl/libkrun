@@ -20,7 +20,9 @@ pub fn add_seccomp_filter() {
     let mut ctx = Context::default(Action::KillProcess).unwrap();
     // ctx.add_rule(create_default_seccomp_rule(SYS_rt_sigaction as usize)).unwrap();
     // ctx.add_rule(create_default_seccomp_rule(SYS_mmap as usize)).unwrap();
-    // ctx.add_rule(create_default_seccomp_rule(SYS_mprotect as usize)).unwrap();
+    // ctx.add_rule(create_default_seccomp_rule(SYS_statx as usize)).unwrap();
+    // ctx.add_rule(create_default_seccomp_rule(SYS_msync as usize)).unwrap();
+    // ctx.add_rule(create_default_seccomp_rule(SYS_msync as usize)).unwrap();
     // ctx.add_rule(create_default_seccomp_rule(SYS_rt_sigprocmask as usize)).unwrap();
     // ctx.add_rule(create_default_seccomp_rule(SYS_clone as usize)).unwrap();
 
