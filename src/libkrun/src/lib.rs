@@ -14,21 +14,20 @@ use std::slice;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Mutex;
 
+<<<<<<< HEAD
 #[cfg(feature = "amd-sev")]
 use devices::virtio::CacheType;
 use env_logger::Env;
+=======
+>>>>>>> 8bc58d2 (Remove some arch specific code)
 use libc::{c_char, size_t};
 use once_cell::sync::Lazy;
 use polly::event_manager::EventManager;
 use vmm::resources::VmResources;
-#[cfg(feature = "amd-sev")]
-use vmm::vmm_config::block::BlockDeviceConfig;
 use vmm::vmm_config::boot_source::{BootSourceConfig, DEFAULT_KERNEL_CMDLINE};
 #[cfg(not(feature = "amd-sev"))]
 use vmm::vmm_config::fs::FsDeviceConfig;
 use vmm::vmm_config::kernel_bundle::KernelBundle;
-#[cfg(feature = "amd-sev")]
-use vmm::vmm_config::kernel_bundle::{InitrdBundle, QbootBundle};
 use vmm::vmm_config::machine_config::VmConfig;
 use vmm::vmm_config::vsock::VsockDeviceConfig;
 
@@ -56,11 +55,7 @@ struct ContextConfig {
     rlimits: Option<String>,
     #[cfg(not(feature = "amd-sev"))]
     fs_cfg: Option<FsDeviceConfig>,
-    #[cfg(feature = "amd-sev")]
-    block_cfg: Option<BlockDeviceConfig>,
     port_map: Option<HashMap<u16, u16>>,
-    #[cfg(feature = "amd-sev")]
-    attestation_url: Option<String>,
 }
 
 impl ContextConfig {
@@ -129,32 +124,12 @@ impl ContextConfig {
         self.fs_cfg.clone()
     }
 
-    #[cfg(feature = "amd-sev")]
-    fn set_block_cfg(&mut self, block_cfg: BlockDeviceConfig) {
-        self.block_cfg = Some(block_cfg);
-    }
-
-    #[cfg(feature = "amd-sev")]
-    fn get_block_cfg(&self) -> Option<BlockDeviceConfig> {
-        self.block_cfg.clone()
-    }
-
     fn set_port_map(&mut self, port_map: HashMap<u16, u16>) {
         self.port_map = Some(port_map);
     }
-
+    
     fn get_port_map(&self) -> Option<HashMap<u16, u16>> {
         self.port_map.clone()
-    }
-
-    #[cfg(feature = "amd-sev")]
-    fn set_attestation_url(&mut self, url: String) {
-        self.attestation_url = Some(url);
-    }
-
-    #[cfg(feature = "amd-sev")]
-    fn get_attestation_url(&self) -> Option<String> {
-        self.attestation_url.clone()
     }
 }
 
@@ -164,15 +139,6 @@ static CTX_IDS: AtomicI32 = AtomicI32::new(0);
 #[cfg(not(feature = "amd-sev"))]
 #[link(name = "krunfw")]
 extern "C" {
-    fn krunfw_get_kernel(load_addr: *mut u64, size: *mut size_t) -> *mut c_char;
-    fn krunfw_get_version() -> u32;
-}
-
-#[cfg(feature = "amd-sev")]
-#[link(name = "krunfw-sev")]
-extern "C" {
-    fn krunfw_get_qboot(size: *mut size_t) -> *mut c_char;
-    fn krunfw_get_initrd(size: *mut size_t) -> *mut c_char;
     fn krunfw_get_kernel(load_addr: *mut u64, size: *mut size_t) -> *mut c_char;
     fn krunfw_get_version() -> u32;
 }
@@ -216,25 +182,6 @@ pub extern "C" fn krun_create_ctx() -> i32 {
         size: kernel_size,
     };
     ctx_cfg.vmr.set_kernel_bundle(kernel_bundle).unwrap();
-
-    #[cfg(feature = "amd-sev")]
-    {
-        let mut qboot_size: usize = 0;
-        let qboot_host_addr = unsafe { krunfw_get_qboot(&mut qboot_size as *mut usize) };
-        let qboot_bundle = QbootBundle {
-            host_addr: qboot_host_addr as u64,
-            size: qboot_size,
-        };
-        ctx_cfg.vmr.set_qboot_bundle(qboot_bundle).unwrap();
-
-        let mut initrd_size: usize = 0;
-        let initrd_host_addr = unsafe { krunfw_get_initrd(&mut initrd_size as *mut usize) };
-        let initrd_bundle = InitrdBundle {
-            host_addr: initrd_host_addr as u64,
-            size: initrd_size,
-        };
-        ctx_cfg.vmr.set_initrd_bundle(initrd_bundle).unwrap();
-    }
 
     let ctx_id = CTX_IDS.fetch_add(1, Ordering::SeqCst);
     if ctx_id == i32::MAX || CTX_MAP.lock().unwrap().contains_key(&(ctx_id as u32)) {
@@ -370,36 +317,6 @@ pub unsafe extern "C" fn krun_set_mapped_volumes(
                 },
             };
             cfg.set_fs_cfg(fs_device_config);
-        }
-        Entry::Vacant(_) => return -libc::ENOENT,
-    }
-
-    KRUN_SUCCESS
-}
-
-#[allow(clippy::missing_safety_doc)]
-#[no_mangle]
-#[cfg(feature = "amd-sev")]
-pub unsafe extern "C" fn krun_set_root_disk(ctx_id: u32, c_disk_path: *const c_char) -> i32 {
-    let disk_path = match CStr::from_ptr(c_disk_path).to_str() {
-        Ok(disk) => disk,
-        Err(_) => return -libc::EINVAL,
-    };
-
-    //let fs_id = "/dev/root".to_string();
-    //let shared_dir = root_path.to_string();
-
-    match CTX_MAP.lock().unwrap().entry(ctx_id) {
-        Entry::Occupied(mut ctx_cfg) => {
-            let cfg = ctx_cfg.get_mut();
-            let block_device_config = BlockDeviceConfig {
-                block_id: "root".to_string(),
-                cache_type: CacheType::Writeback,
-                disk_image_path: disk_path.to_string(),
-                is_disk_read_only: false,
-                is_disk_root: true,
-            };
-            cfg.set_block_cfg(block_device_config);
         }
         Entry::Vacant(_) => return -libc::ENOENT,
     }
@@ -580,26 +497,6 @@ pub unsafe extern "C" fn krun_set_exec(
     KRUN_SUCCESS
 }
 
-#[allow(clippy::missing_safety_doc)]
-#[no_mangle]
-#[cfg(feature = "amd-sev")]
-pub unsafe extern "C" fn krun_set_attestation_url(ctx_id: u32, c_url: *const c_char) -> i32 {
-    let url = match CStr::from_ptr(c_url).to_str() {
-        Ok(u) => u,
-        Err(_) => return -libc::EINVAL,
-    };
-
-    match CTX_MAP.lock().unwrap().entry(ctx_id) {
-        Entry::Occupied(mut ctx_cfg) => {
-            let cfg = ctx_cfg.get_mut();
-            cfg.set_attestation_url(url.to_string());
-        }
-        Entry::Vacant(_) => return -libc::ENOENT,
-    }
-
-    KRUN_SUCCESS
-}
-
 #[no_mangle]
 pub extern "C" fn krun_start_enter(ctx_id: u32) -> i32 {
     #[cfg(target_os = "linux")]
@@ -629,18 +526,6 @@ pub extern "C" fn krun_start_enter(ctx_id: u32) -> i32 {
         if ctx_cfg.vmr.set_fs_device(fs_cfg).is_err() {
             return -libc::EINVAL;
         }
-    }
-
-    #[cfg(feature = "amd-sev")]
-    if let Some(block_cfg) = ctx_cfg.get_block_cfg() {
-        if ctx_cfg.vmr.set_block_device(block_cfg).is_err() {
-            return -libc::EINVAL;
-        }
-    }
-
-    #[cfg(feature = "amd-sev")]
-    if let Some(url) = ctx_cfg.get_attestation_url() {
-        ctx_cfg.vmr.set_attestation_url(url);
     }
 
     let boot_source = BootSourceConfig {

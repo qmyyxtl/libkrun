@@ -33,6 +33,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 use macos::vstate;
 
+use std::f32::consts::E;
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::os::unix::io::AsRawFd;
@@ -252,11 +253,6 @@ impl Vmm {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
-    pub fn resume_vcpus(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     /// Configures the system for boot.
     pub fn configure_system(&self, vcpus: &[Vcpu], initrd: &Option<InitrdConfig>) -> Result<()> {
         #[cfg(target_arch = "x86_64")]
@@ -269,42 +265,6 @@ impl Vmm {
             vcpus.len() as u8,
         )
         .map_err(Error::ConfigureSystem)?;
-
-        #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
-        {
-            let vcpu_mpidr = vcpus.iter().map(|cpu| cpu.get_mpidr()).collect();
-            arch::aarch64::configure_system(
-                &self.guest_memory,
-                &self.arch_memory_info,
-                &self
-                    .kernel_cmdline
-                    .as_cstring()
-                    .map_err(Error::LoadCommandline)?,
-                vcpu_mpidr,
-                self.mmio_device_manager.get_device_info(),
-                self.vm.get_irqchip(),
-                initrd,
-            )
-            .map_err(Error::ConfigureSystem)?;
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
-        {
-            let vcpu_mpidr = vcpus.iter().map(|cpu| cpu.get_mpidr()).collect();
-            arch::aarch64::configure_system(
-                &self.guest_memory,
-                &self.arch_memory_info,
-                &self
-                    .kernel_cmdline
-                    .as_cstring()
-                    .map_err(Error::LoadCommandline)?,
-                vcpu_mpidr,
-                self.mmio_device_manager.get_device_info(),
-                self.vm.get_irqchip(),
-                initrd,
-            )
-            .map_err(Error::ConfigureSystem)?;
-        }
         Ok(())
     }
 
@@ -326,7 +286,7 @@ impl Vmm {
 
     /// Waits for all vCPUs to exit and terminates the Firecracker process.
     pub fn stop(&mut self, exit_code: i32) {
-        info!("Vmm is stopping.");
+        info!("Vmm is stopping. Exit code={}", exit_code);
 
         //if let Some(observer) = self.events_observer.as_mut() {
         //    if let Err(e) = observer.on_vmm_stop() {

@@ -8,3 +8,5 @@ __pycache__
 *~
 init/init
 examples/chroot_vm
+**/rootfs_fedora
+.devcontainer

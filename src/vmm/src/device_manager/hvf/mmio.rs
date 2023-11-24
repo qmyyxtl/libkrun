@@ -9,16 +9,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::{fmt, io};
 
-#[cfg(target_arch = "aarch64")]
-use arch::aarch64::DeviceInfoForFDT;
 use arch::DeviceType;
 use devices;
 
 use devices::legacy::Gic;
 use devices::BusDevice;
 use kernel::cmdline as kernel_cmdline;
-#[cfg(target_arch = "aarch64")]
-use utils::eventfd::EventFd;
 
 use crate::vstate::Vm;
 
@@ -138,113 +134,6 @@ impl MMIODeviceManager {
 
         Ok(ret)
     }
-
-    #[cfg(target_arch = "aarch64")]
-    /// Register an early console at some MMIO address.
-    pub fn register_mmio_serial(
-        &mut self,
-        _vm: &Vm,
-        cmdline: &mut kernel_cmdline::Cmdline,
-        _intc: Option<Arc<Mutex<devices::legacy::Gic>>>,
-        serial: Arc<Mutex<devices::legacy::Serial>>,
-    ) -> Result<()> {
-        if self.irq > self.last_irq {
-            return Err(Error::IrqsExhausted);
-        }
-
-        self.bus
-            .insert(serial, self.mmio_base, MMIO_LEN)
-            .map_err(Error::BusError)?;
-
-        cmdline
-            .insert("earlycon", &format!("uart,mmio,0x{:08x}", self.mmio_base))
-            .map_err(Error::Cmdline)?;
-
-        let ret = self.mmio_base;
-        self.id_to_dev_info.insert(
-            (DeviceType::Serial, DeviceType::Serial.to_string()),
-            MMIODeviceInfo {
-                addr: ret,
-                len: MMIO_LEN,
-                irq: self.irq,
-            },
-        );
-
-        self.mmio_base += MMIO_LEN;
-        self.irq += 1;
-
-        Ok(())
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    /// Register a MMIO RTC device.
-    pub fn register_mmio_rtc(&mut self, _vm: &Vm, _intc: Option<Arc<Mutex<Gic>>>) -> Result<()> {
-        if self.irq > self.last_irq {
-            return Err(Error::IrqsExhausted);
-        }
-
-        // Attaching the RTC device.
-        let rtc_evt = EventFd::new(utils::eventfd::EFD_NONBLOCK).map_err(Error::EventFd)?;
-        let device = devices::legacy::RTC::new(rtc_evt.try_clone().map_err(Error::EventFd)?);
-
-        self.bus
-            .insert(Arc::new(Mutex::new(device)), self.mmio_base, MMIO_LEN)
-            .map_err(Error::BusError)?;
-
-        let ret = self.mmio_base;
-        self.id_to_dev_info.insert(
-            (DeviceType::RTC, "rtc".to_string()),
-            MMIODeviceInfo {
-                addr: ret,
-                len: MMIO_LEN,
-                irq: self.irq,
-            },
-        );
-
-        self.mmio_base += MMIO_LEN;
-        self.irq += 1;
-
-        Ok(())
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    /// Register a MMIO GIC device.
-    pub fn register_mmio_gic(&mut self, _vm: &Vm, intc: Option<Arc<Mutex<Gic>>>) -> Result<()> {
-        if let Some(intc) = intc {
-            self.bus
-                .insert(
-                    intc,
-                    devices::legacy::Gic::get_addr(),
-                    devices::legacy::Gic::get_size(),
-                )
-                .map_err(Error::BusError)?;
-        }
-
-        Ok(())
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    /// Gets the information of the devices registered up to some point in time.
-    pub fn get_device_info(&self) -> &HashMap<(DeviceType, String), MMIODeviceInfo> {
-        &self.id_to_dev_info
-    }
-
-    /// Gets the the specified device.
-    pub fn get_device(
-        &self,
-        device_type: DeviceType,
-        device_id: &str,
-    ) -> Option<&Mutex<dyn BusDevice>> {
-        if let Some(dev_info) = self
-            .id_to_dev_info
-            .get(&(device_type, device_id.to_string()))
-        {
-            if let Some((_, device)) = self.bus.get_device(dev_info.addr) {
-                return Some(device);
-            }
-        }
-        None
-    }
 }
 
 /// Private structure for storing information about the MMIO device registered at some address on the bus.
@@ -253,19 +142,6 @@ pub struct MMIODeviceInfo {
     addr: u64,
     irq: u32,
     len: u64,
-}
-
-#[cfg(target_arch = "aarch64")]
-impl DeviceInfoForFDT for MMIODeviceInfo {
-    fn addr(&self) -> u64 {
-        self.addr
-    }
-    fn irq(&self) -> u32 {
-        self.irq
-    }
-    fn length(&self) -> u64 {
-        self.len
-    }
 }
 
 #[cfg(test)]
@@ -396,8 +272,6 @@ mod tests {
         let dummy = Arc::new(Mutex::new(DummyDevice::new()));
         #[cfg(target_arch = "x86_64")]
         assert!(builder::setup_interrupt_controller(&mut vm).is_ok());
-        #[cfg(target_arch = "aarch64")]
-        assert!(builder::setup_interrupt_controller(&mut vm, 1).is_ok());
 
         assert!(device_manager
             .register_virtio_device(vm.fd(), guest_mem, dummy, &mut cmdline, 0, "dummy")
@@ -417,8 +291,6 @@ mod tests {
         let mut cmdline = kernel_cmdline::Cmdline::new(4096);
         #[cfg(target_arch = "x86_64")]
         assert!(builder::setup_interrupt_controller(&mut vm).is_ok());
-        #[cfg(target_arch = "aarch64")]
-        assert!(builder::setup_interrupt_controller(&mut vm, 1).is_ok());
 
         for _i in arch::IRQ_BASE..=arch::IRQ_MAX {
             device_manager

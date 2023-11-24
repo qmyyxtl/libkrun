@@ -14,17 +14,6 @@ pub struct ArchMemoryInfo {
     pub shm_size: u64,
 }
 
-/// Module for aarch64 related functionality.
-#[cfg(target_arch = "aarch64")]
-pub mod aarch64;
-
-#[cfg(target_arch = "aarch64")]
-pub use aarch64::{
-    arch_memory_regions, configure_system, get_kernel_start, initrd_load_addr,
-    layout::CMDLINE_MAX_SIZE, layout::IRQ_BASE, layout::IRQ_MAX, Error, MMIO_MEM_START,
-    MMIO_SHM_SIZE,
-};
-
 /// Module for x86_64 related functionality.
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
@@ -43,13 +32,7 @@ pub type Result<T> = result::Result<T, Error>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
 pub enum DeviceType {
     /// Device Type: Virtio.
-    Virtio(u32),
-    /// Device Type: Serial.
-    #[cfg(target_arch = "aarch64")]
-    Serial,
-    /// Device Type: RTC.
-    #[cfg(target_arch = "aarch64")]
-    RTC,
+    Virtio(u32)
 }
 
 /// Type for passing information about the initrd in the guest memory.

@@ -311,16 +311,6 @@ pub fn build_microvm(
             .map_err(StartMicrovmError::KernelBundle)?
     };
 
-    #[cfg(feature = "amd-sev")]
-    let qboot_bundle = vm_resources
-        .qboot_bundle()
-        .ok_or(StartMicrovmError::MissingKernelConfig)?;
-
-    #[cfg(feature = "amd-sev")]
-    let initrd_bundle = vm_resources
-        .initrd_bundle()
-        .ok_or(StartMicrovmError::MissingKernelConfig)?;
-
     let (guest_memory, arch_memory_info) = create_guest_memory(
         vm_resources
             .vm_config()
@@ -329,10 +319,6 @@ pub fn build_microvm(
         kernel_region,
         kernel_bundle.guest_addr,
         kernel_bundle.size,
-        #[cfg(feature = "amd-sev")]
-        qboot_bundle,
-        #[cfg(feature = "amd-sev")]
-        initrd_bundle,
     )?;
     let vcpu_config = vm_resources.vcpu_config();
 
@@ -344,69 +330,7 @@ pub fn build_microvm(
         Some(s) => kernel_cmdline.insert_str(s).unwrap(),
     };
 
-    #[cfg(not(feature = "amd-sev"))]
     let mut vm = { setup_vm(&guest_memory, None)? };
-
-    #[cfg(feature = "amd-sev")]
-    let (attestation_url, mut vm) = {
-        let attestation_url = vm_resources.attestation_url();
-        let vm = setup_vm(&guest_memory, attestation_url.clone())?;
-        (attestation_url, vm)
-    };
-
-    #[cfg(feature = "amd-sev")]
-    let measured_regions = {
-        vm.secure_virt_prepare(&guest_memory)
-            .map_err(StartMicrovmError::SecureVirtPrepare)?;
-
-        let mut measured_regions: Vec<MeasuredRegion> = vec![
-            MeasuredRegion {
-                host_addr: guest_memory
-                    .get_host_address(GuestAddress(arch::BIOS_START))
-                    .unwrap() as u64,
-                size: qboot_bundle.size,
-            },
-            MeasuredRegion {
-                host_addr: guest_memory
-                    .get_host_address(GuestAddress(kernel_bundle.guest_addr))
-                    .unwrap() as u64,
-                size: kernel_bundle.size,
-            },
-            MeasuredRegion {
-                host_addr: guest_memory
-                    .get_host_address(GuestAddress(arch::x86_64::layout::INITRD_START))
-                    .unwrap() as u64,
-                size: initrd_bundle.size,
-            },
-        ];
-
-        if attestation_url.is_none() {
-            measured_regions.push(MeasuredRegion {
-                host_addr: guest_memory
-                    .get_host_address(GuestAddress(arch::x86_64::layout::CMDLINE_START))
-                    .unwrap() as u64,
-                size: 4096,
-            })
-        }
-
-        measured_regions
-    };
-
-    // On x86_64 always create a serial device,
-    // while on aarch64 only create it if 'console=' is specified in the boot args.
-    /*
-    let serial_device = if cfg!(target_arch = "x86_64")
-        || (cfg!(target_arch = "aarch64") && kernel_cmdline.as_str().contains("console="))
-    {
-        Some(setup_serial_device(
-            event_manager,
-            Box::new(SerialStdin::get()),
-            Box::new(io::stdout()),
-        )?)
-    } else {
-        None
-    };
-    */
 
     let serial_device = None;
 
@@ -438,13 +362,9 @@ pub fn build_microvm(
 
     #[cfg(target_os = "linux")]
     let intc = None;
-    #[cfg(target_os = "macos")]
-    let intc = Some(Arc::new(Mutex::new(devices::legacy::Gic::new())));
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64", not(feature = "amd-sev")))]
     let boot_ip: GuestAddress = GuestAddress(kernel_bundle.guest_addr);
-    #[cfg(feature = "amd-sev")]
-    let boot_ip: GuestAddress = GuestAddress(arch::RESET_VECTOR);
 
     let vcpus;
     // For x86_64 we need to create the interrupt controller before calling `KVM_CREATE_VCPUS`
@@ -466,54 +386,6 @@ pub fn build_microvm(
         .map_err(StartMicrovmError::Internal)?;
     }
 
-    // On aarch64, the vCPUs need to be created (i.e call KVM_CREATE_VCPU) and configured before
-    // setting up the IRQ chip because the `KVM_CREATE_VCPU` ioctl will return error if the IRQCHIP
-    // was already initialized.
-    // Search for `kvm_arch_vcpu_create` in arch/arm/kvm/arm.c.
-    #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
-    {
-        vcpus = create_vcpus_aarch64(
-            &vm,
-            &vcpu_config,
-            &guest_memory,
-            GuestAddress(kernel_bundle.guest_addr),
-            request_ts,
-            &exit_evt,
-        )
-        .map_err(StartMicrovmError::Internal)?;
-
-        setup_interrupt_controller(&mut vm, vcpu_config.vcpu_count)?;
-        attach_legacy_devices(
-            &vm,
-            &mut mmio_device_manager,
-            &mut kernel_cmdline,
-            serial_device,
-        )?;
-    }
-
-    #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
-    {
-        vcpus = create_vcpus_aarch64(
-            &vm,
-            &vcpu_config,
-            &guest_memory,
-            GuestAddress(kernel_bundle.guest_addr),
-            request_ts,
-            &exit_evt,
-            intc.clone().unwrap(),
-        )
-        .map_err(StartMicrovmError::Internal)?;
-
-        setup_interrupt_controller(&mut vm, vcpu_config.vcpu_count)?;
-        attach_legacy_devices(
-            &vm,
-            &mut mmio_device_manager,
-            &mut kernel_cmdline,
-            intc.clone(),
-            serial_device,
-        )?;
-    }
-
     #[cfg(all(target_os = "linux", not(feature = "amd-sev")))]
     let shm_region = Some(VirtioShmRegion {
         host_addr: guest_memory
@@ -522,8 +394,6 @@ pub fn build_microvm(
         guest_addr: arch_memory_info.shm_start_addr,
         size: arch_memory_info.shm_size as usize,
     });
-    #[cfg(all(target_os = "macos"))]
-    let shm_region = None;
 
     let mut vmm = Vmm {
         //events_observer: Some(Box::new(SerialStdin::get())),
@@ -538,12 +408,10 @@ pub fn build_microvm(
         pio_device_manager,
     };
 
-    #[cfg(not(feature = "amd-sev"))]
     attach_balloon_device(&mut vmm, event_manager, intc.clone())?;
     #[cfg(not(feature = "amd-sev"))]
     attach_rng_device(&mut vmm, event_manager, intc.clone())?;
     attach_console_devices(&mut vmm, event_manager, intc.clone())?;
-    #[cfg(not(feature = "amd-sev"))]
     attach_fs_devices(
         &mut vmm,
         &vm_resources.fs,
@@ -551,8 +419,6 @@ pub fn build_microvm(
         shm_region,
         intc.clone(),
     )?;
-    #[cfg(feature = "amd-sev")]
-    attach_block_devices(&mut vmm, &vm_resources.block, event_manager, intc.clone())?;
     if let Some(vsock) = vm_resources.vsock.get() {
         attach_unixsock_vsock_device(&mut vmm, vsock, event_manager, intc)?;
     }
@@ -566,19 +432,9 @@ pub fn build_microvm(
     #[cfg(all(target_arch = "x86_64", not(feature = "amd-sev")))]
     load_cmdline(&vmm)?;
 
-    #[cfg(feature = "amd-sev")]
-    if attestation_url.is_none() {
-        load_cmdline(&vmm)?;
-    }
-
     vmm.configure_system(vcpus.as_slice(), &None)
         .map_err(StartMicrovmError::Internal)?;
 
-    #[cfg(feature = "amd-sev")]
-    let _measurement = vmm
-        .kvm_vm()
-        .secure_virt_attest(vmm.guest_memory(), measured_regions)
-        .map_err(StartMicrovmError::SecureVirtAttest)?;
 
     vmm.start_vcpus(vcpus)
         .map_err(StartMicrovmError::Internal)?;
@@ -616,67 +472,6 @@ pub fn create_guest_memory(
     ))
 }
 
-/// Creates GuestMemory of `mem_size_mib` MiB in size.
-#[cfg(all(target_os = "linux", target_arch = "x86_64", feature = "amd-sev"))]
-pub fn create_guest_memory(
-    mem_size_mib: usize,
-    kernel_region: MmapRegion,
-    kernel_load_addr: u64,
-    kernel_size: usize,
-    qboot_bundle: &QbootBundle,
-    initrd_bundle: &InitrdBundle,
-) -> std::result::Result<(GuestMemoryMmap, ArchMemoryInfo), StartMicrovmError> {
-    let mem_size = mem_size_mib << 20;
-    let (arch_mem_info, arch_mem_regions) =
-        arch::arch_memory_regions(mem_size, kernel_load_addr, kernel_size);
-
-    let guest_mem = GuestMemoryMmap::from_ranges(&arch_mem_regions)
-        .map_err(StartMicrovmError::GuestMemoryMmap)?;
-
-    let kernel_data = unsafe { std::slice::from_raw_parts(kernel_region.as_ptr(), kernel_size) };
-    guest_mem
-        .write(kernel_data, GuestAddress(kernel_load_addr as u64))
-        .unwrap();
-
-    let qboot_data =
-        unsafe { std::slice::from_raw_parts(qboot_bundle.host_addr as *mut u8, qboot_bundle.size) };
-    guest_mem
-        .write(qboot_data, GuestAddress(arch::BIOS_START as u64))
-        .unwrap();
-
-    let initrd_data = unsafe {
-        std::slice::from_raw_parts(initrd_bundle.host_addr as *mut u8, initrd_bundle.size)
-    };
-    guest_mem
-        .write(
-            initrd_data,
-            GuestAddress(arch::x86_64::layout::INITRD_START as u64),
-        )
-        .unwrap();
-
-    Ok((guest_mem, arch_mem_info))
-}
-
-#[cfg(target_arch = "aarch64")]
-pub fn create_guest_memory(
-    mem_size_mib: usize,
-    kernel_region: MmapRegion,
-    kernel_load_addr: u64,
-    kernel_size: usize,
-) -> std::result::Result<(GuestMemoryMmap, ArchMemoryInfo), StartMicrovmError> {
-    let mem_size = mem_size_mib << 20;
-    let (arch_mem_info, arch_mem_regions) =
-        arch::arch_memory_regions(mem_size, kernel_load_addr, kernel_size);
-
-    let guest_mem = GuestMemoryMmap::from_ranges(&arch_mem_regions)
-        .map_err(StartMicrovmError::GuestMemoryMmap)?;
-
-    let kernel_data = unsafe { std::slice::from_raw_parts(kernel_region.as_ptr(), kernel_size) };
-    guest_mem
-        .write(kernel_data, GuestAddress(kernel_load_addr as u64))
-        .unwrap();
-    Ok((guest_mem, arch_mem_info))
-}
 
 #[cfg(target_arch = "x86_64")]
 fn load_cmdline(vmm: &Vmm) -> std::result::Result<(), StartMicrovmError> {
@@ -706,35 +501,11 @@ pub(crate) fn setup_vm(
         .map_err(StartMicrovmError::Internal)?;
     Ok(vm)
 }
-#[cfg(target_os = "macos")]
-pub(crate) fn setup_vm(
-    guest_memory: &GuestMemoryMmap,
-    _attestation_url: Option<String>,
-) -> std::result::Result<Vm, StartMicrovmError> {
-    let mut vm = Vm::new()
-        .map_err(Error::Vm)
-        .map_err(StartMicrovmError::Internal)?;
-    vm.memory_init(guest_memory)
-        .map_err(Error::Vm)
-        .map_err(StartMicrovmError::Internal)?;
-    Ok(vm)
-}
 
 /// Sets up the irqchip for a x86_64 microVM.
 #[cfg(target_arch = "x86_64")]
 pub fn setup_interrupt_controller(vm: &mut Vm) -> std::result::Result<(), StartMicrovmError> {
     vm.setup_irqchip()
-        .map_err(Error::Vm)
-        .map_err(StartMicrovmError::Internal)
-}
-
-/// Sets up the irqchip for a aarch64 microVM.
-#[cfg(target_arch = "aarch64")]
-pub fn setup_interrupt_controller(
-    vm: &mut Vm,
-    vcpu_count: u8,
-) -> std::result::Result<(), StartMicrovmError> {
-    vm.setup_irqchip(vcpu_count)
         .map_err(Error::Vm)
         .map_err(StartMicrovmError::Internal)
 }
@@ -789,55 +560,6 @@ fn attach_legacy_devices(
     Ok(())
 }
 
-#[cfg(all(target_arch = "aarch64", target_os = "linux"))]
-fn attach_legacy_devices(
-    vm: &Vm,
-    mmio_device_manager: &mut MMIODeviceManager,
-    kernel_cmdline: &mut kernel::cmdline::Cmdline,
-    serial: Option<Arc<Mutex<Serial>>>,
-) -> std::result::Result<(), StartMicrovmError> {
-    if let Some(serial) = serial {
-        mmio_device_manager
-            .register_mmio_serial(vm.fd(), kernel_cmdline, serial)
-            .map_err(Error::RegisterMMIODevice)
-            .map_err(StartMicrovmError::Internal)?;
-    }
-
-    mmio_device_manager
-        .register_mmio_rtc(vm.fd())
-        .map_err(Error::RegisterMMIODevice)
-        .map_err(StartMicrovmError::Internal)?;
-
-    Ok(())
-}
-
-#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
-fn attach_legacy_devices(
-    vm: &Vm,
-    mmio_device_manager: &mut MMIODeviceManager,
-    kernel_cmdline: &mut kernel::cmdline::Cmdline,
-    intc: Option<Arc<Mutex<Gic>>>,
-    serial: Option<Arc<Mutex<Serial>>>,
-) -> std::result::Result<(), StartMicrovmError> {
-    if let Some(serial) = serial {
-        mmio_device_manager
-            .register_mmio_serial(vm, kernel_cmdline, intc.clone(), serial)
-            .map_err(Error::RegisterMMIODevice)
-            .map_err(StartMicrovmError::Internal)?;
-    }
-
-    mmio_device_manager
-        .register_mmio_rtc(vm, intc.clone())
-        .map_err(Error::RegisterMMIODevice)
-        .map_err(StartMicrovmError::Internal)?;
-
-    mmio_device_manager
-        .register_mmio_gic(vm, intc)
-        .map_err(Error::RegisterMMIODevice)
-        .map_err(StartMicrovmError::Internal)?;
-
-    Ok(())
-}
 
 #[cfg(target_arch = "x86_64")]
 fn create_vcpus_x86_64(
@@ -867,75 +589,6 @@ fn create_vcpus_x86_64(
 
         vcpus.push(vcpu);
     }
-    Ok(vcpus)
-}
-
-#[cfg(all(target_arch = "aarch64", target_os = "linux"))]
-fn create_vcpus_aarch64(
-    vm: &Vm,
-    vcpu_config: &VcpuConfig,
-    guest_mem: &GuestMemoryMmap,
-    entry_addr: GuestAddress,
-    request_ts: TimestampUs,
-    exit_evt: &EventFd,
-) -> super::Result<Vec<Vcpu>> {
-    let mut vcpus = Vec::with_capacity(vcpu_config.vcpu_count as usize);
-    for cpu_index in 0..vcpu_config.vcpu_count {
-        let mut vcpu = Vcpu::new_aarch64(
-            cpu_index,
-            vm.fd(),
-            exit_evt.try_clone().map_err(Error::EventFd)?,
-            request_ts.clone(),
-        )
-        .map_err(Error::Vcpu)?;
-
-        vcpu.configure_aarch64(vm.fd(), guest_mem, entry_addr)
-            .map_err(Error::Vcpu)?;
-
-        vcpus.push(vcpu);
-    }
-    Ok(vcpus)
-}
-
-#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
-fn create_vcpus_aarch64(
-    _vm: &Vm,
-    vcpu_config: &VcpuConfig,
-    guest_mem: &GuestMemoryMmap,
-    entry_addr: GuestAddress,
-    request_ts: TimestampUs,
-    exit_evt: &EventFd,
-    intc: Arc<Mutex<Gic>>,
-) -> super::Result<Vec<Vcpu>> {
-    let mut vcpus = Vec::with_capacity(vcpu_config.vcpu_count as usize);
-    let mut boot_senders = Vec::with_capacity(vcpu_config.vcpu_count as usize - 1);
-
-    for cpu_index in 0..vcpu_config.vcpu_count {
-        let boot_receiver = if cpu_index != 0 {
-            let (boot_sender, boot_receiver) = channel();
-            boot_senders.push(boot_sender);
-            Some(boot_receiver)
-        } else {
-            None
-        };
-
-        let mut vcpu = Vcpu::new_aarch64(
-            cpu_index,
-            entry_addr,
-            boot_receiver,
-            exit_evt.try_clone().map_err(Error::EventFd)?,
-            request_ts.clone(),
-            intc.clone(),
-        )
-        .map_err(Error::Vcpu)?;
-
-        vcpu.configure_aarch64(guest_mem).map_err(Error::Vcpu)?;
-
-        vcpus.push(vcpu);
-    }
-
-    vcpus[0].set_boot_senders(boot_senders);
-
     Ok(vcpus)
 }
 
@@ -1106,37 +759,6 @@ fn attach_balloon_device(
     Ok(())
 }
 
-#[cfg(feature = "amd-sev")]
-fn attach_block_devices(
-    vmm: &mut Vmm,
-    block_devs: &BlockBuilder,
-    event_manager: &mut EventManager,
-    intc: Option<Arc<Mutex<Gic>>>,
-) -> std::result::Result<(), StartMicrovmError> {
-    use self::StartMicrovmError::*;
-
-    for block in block_devs.list.iter() {
-        let id = String::from(block.lock().unwrap().id());
-
-        if let Some(ref intc) = intc {
-            block.lock().unwrap().set_intc(intc.clone());
-        }
-
-        event_manager
-            .add_subscriber(block.clone())
-            .map_err(RegisterEvent)?;
-
-        // The device mutex mustn't be locked here otherwise it will deadlock.
-        attach_mmio_device(
-            vmm,
-            id,
-            MmioTransport::new(vmm.guest_memory().clone(), block.clone()),
-        )
-        .map_err(RegisterBlockDevice)?;
-    }
-
-    Ok(())
-}
 
 #[cfg(not(feature = "amd-sev"))]
 fn attach_rng_device(
@@ -1220,30 +842,25 @@ pub mod tests {
     }
 
     #[test]
-    #[cfg(target_arch = "aarch64")]
-    fn test_create_vcpus_aarch64() {
-        let guest_memory = create_guest_memory(128).unwrap();
-        let vm = setup_vm(&guest_memory, None).unwrap();
-        let vcpu_count = 2;
+    fn test_attach_vsock_device() {
+        let mut event_manager = EventManager::new().expect("Unable to create EventManager");
+        let mut vmm = default_vmm();
 
-        let vcpu_config = VcpuConfig {
-            vcpu_count,
-            ht_enabled: false,
-            cpu_template: None,
-        };
+        #[cfg(target_arch = "x86_64")]
+        setup_interrupt_controller(&mut vmm.vm).unwrap();
 
-        // Dummy entry_addr, vcpus will not boot.
-        let entry_addr = GuestAddress(0);
-        let vcpu_vec = create_vcpus_aarch64(
-            &vm,
-            &vcpu_config,
-            &guest_memory,
-            entry_addr,
-            TimestampUs::default(),
-            &EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(vcpu_vec.len(), vcpu_count as usize);
+        let tmp_sock_file = TempSockFile::new(TempFile::new().unwrap());
+        let vsock_config = default_config(&tmp_sock_file);
+
+        let vsock_dev_id = vsock_config.vsock_id.clone();
+        let vsock = VsockBuilder::create_unixsock_vsock(vsock_config).unwrap();
+        let vsock = Arc::new(Mutex::new(vsock));
+        assert!(attach_unixsock_vsock_device(&mut vmm, &vsock, &mut event_manager, None).is_ok());
+
+        assert!(vmm
+            .mmio_device_manager
+            .get_device(DeviceType::Virtio(TYPE_VSOCK), &vsock_dev_id)
+            .is_some());
     }
 
     #[test]

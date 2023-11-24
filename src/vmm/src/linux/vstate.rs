@@ -26,8 +26,6 @@ use sev::launch::Measurement;
 
 use crate::vmm_config::machine_config::CpuFeaturesTemplate;
 use arch;
-#[cfg(target_arch = "aarch64")]
-use arch::aarch64::gic::GICDevice;
 #[cfg(target_arch = "x86_64")]
 use cpuid::{c3, filter_cpuid, t2, VmSpec};
 #[cfg(target_arch = "x86_64")]
@@ -48,8 +46,6 @@ use vm_memory::{
 
 #[cfg(target_arch = "x86_64")]
 const MAGIC_IOPORT_SIGNAL_GUEST_BOOT_COMPLETE: u64 = 0x03f0;
-#[cfg(target_arch = "aarch64")]
-const MAGIC_IOPORT_SIGNAL_GUEST_BOOT_COMPLETE: u64 = 0x40000000;
 const MAGIC_VALUE_SIGNAL_GUEST_BOOT_COMPLETE: u8 = 123;
 
 /// Signal number (SIGRTMIN) used to kick Vcpus.
@@ -85,37 +81,16 @@ pub enum Error {
     MSRSConfiguration(arch::x86_64::msr::Error),
     /// The number of configured slots is bigger than the maximum reported by KVM.
     NotEnoughMemorySlots,
-    #[cfg(target_arch = "aarch64")]
-    /// Error configuring the general purpose aarch64 registers.
-    REGSConfiguration(arch::aarch64::regs::Error),
     #[cfg(target_arch = "x86_64")]
     /// Error configuring the general purpose registers
     REGSConfiguration(arch::x86_64::regs::Error),
-    #[cfg(target_arch = "aarch64")]
-    /// Error setting up the global interrupt controller.
-    SetupGIC(arch::aarch64::gic::Error),
     /// Cannot set the memory regions.
     SetUserMemoryRegion(kvm_ioctls::Error),
-    #[cfg(feature = "amd-sev")]
-    /// Error initializing the Secure Virtualization Backend.
-    SecVirtInit(SevError),
-    #[cfg(feature = "amd-sev")]
-    /// Error preparing the VM for Secure Virtualization.
-    SecVirtPrepare(SevError),
-    #[cfg(feature = "amd-sev")]
-    /// Error attesting the Secure VM.
-    SecVirtAttest(SevError),
     /// Failed to signal Vcpu.
     SignalVcpu(utils::errno::Error),
     #[cfg(target_arch = "x86_64")]
     /// Error configuring the special registers
     SREGSConfiguration(arch::x86_64::regs::Error),
-    #[cfg(target_arch = "aarch64")]
-    /// Error doing Vcpu Init on Arm.
-    VcpuArmInit(kvm_ioctls::Error),
-    #[cfg(target_arch = "aarch64")]
-    /// Error getting the Vcpu preferred target on Arm.
-    VcpuArmPreferredTarget(kvm_ioctls::Error),
     /// vCPU count is not initialized.
     VcpuCountNotInitialized,
     /// Cannot open the VCPU file descriptor.
@@ -263,12 +238,6 @@ impl Display for Error {
             SignalVcpu(e) => write!(f, "Failed to signal Vcpu: {}", e),
             #[cfg(target_arch = "x86_64")]
             MSRSConfiguration(e) => write!(f, "Error configuring the MSR registers: {:?}", e),
-            #[cfg(target_arch = "aarch64")]
-            REGSConfiguration(e) => write!(
-                f,
-                "Error configuring the general purpose aarch64 registers: {:?}",
-                e
-            ),
             #[cfg(target_arch = "x86_64")]
             REGSConfiguration(e) => write!(
                 f,
@@ -338,29 +307,11 @@ impl Display for Error {
             VmSetClock(e) => write!(f, "Failed to set KVM vm clock: {}", e),
             #[cfg(target_arch = "x86_64")]
             VmSetIrqChip(e) => write!(f, "Failed to set KVM vm irqchip: {}", e),
-            #[cfg(target_arch = "aarch64")]
-            SetupGIC(e) => write!(
-                f,
-                "Error setting up the global interrupt controller: {:?}",
-                e
-            ),
-            #[cfg(target_arch = "aarch64")]
-            VcpuArmPreferredTarget(e) => {
-                write!(f, "Error getting the Vcpu preferred target on Arm: {}", e)
-            }
-            #[cfg(target_arch = "aarch64")]
-            VcpuArmInit(e) => write!(f, "Error doing Vcpu Init on Arm: {}", e),
         }
     }
 }
 
 pub type Result<T> = result::Result<T, Error>;
-
-#[cfg(feature = "amd-sev")]
-pub struct MeasuredRegion {
-    pub host_addr: u64,
-    pub size: usize,
-}
 
 /// Describes a KVM context that gets attached to the microVM.
 /// It gives access to the functionality of the KVM wrapper as
@@ -384,8 +335,6 @@ impl KvmContext {
         #[cfg(target_arch = "x86_64")]
         let capabilities = vec![Irqchip, Ioeventfd, Irqfd, UserMemory, SetTssAddr];
 
-        #[cfg(target_arch = "aarch64")]
-        let capabilities = vec![Irqchip, Ioeventfd, Irqfd, UserMemory, ArmPsci02];
 
         // Check that all desired capabilities are supported.
         match capabilities
@@ -420,14 +369,6 @@ pub struct Vm {
     supported_cpuid: CpuId,
     #[cfg(target_arch = "x86_64")]
     supported_msrs: MsrList,
-
-    // Arm specific fields.
-    // On aarch64 we need to keep around the fd obtained by creating the VGIC device.
-    #[cfg(target_arch = "aarch64")]
-    irqchip_handle: Option<Box<dyn GICDevice>>,
-
-    #[cfg(feature = "amd-sev")]
-    sev: AmdSev,
 }
 
 impl Vm {
@@ -453,10 +394,6 @@ impl Vm {
             supported_cpuid,
             #[cfg(target_arch = "x86_64")]
             supported_msrs,
-            #[cfg(target_arch = "aarch64")]
-            irqchip_handle: None,
-            #[cfg(feature = "amd-sev")]
-            sev,
         })
     }
 
@@ -509,24 +446,6 @@ impl Vm {
         Ok(())
     }
 
-    #[cfg(feature = "amd-sev")]
-    pub fn secure_virt_prepare(&mut self, guest_mem: &GuestMemoryMmap) -> Result<()> {
-        self.sev
-            .vm_prepare(&self.fd, guest_mem)
-            .map_err(Error::SecVirtPrepare)
-    }
-
-    #[cfg(feature = "amd-sev")]
-    pub fn secure_virt_attest(
-        &self,
-        guest_mem: &GuestMemoryMmap,
-        measured_regions: Vec<MeasuredRegion>,
-    ) -> Result<Measurement> {
-        self.sev
-            .vm_attest(&self.fd, guest_mem, measured_regions)
-            .map_err(Error::SecVirtAttest)
-    }
-
     /// Creates the irq chip and an in-kernel device model for the PIT.
     #[cfg(target_arch = "x86_64")]
     pub fn setup_irqchip(&self) -> Result<()> {
@@ -538,22 +457,6 @@ impl Vm {
             ..Default::default()
         };
         self.fd.create_pit2(pit_config).map_err(Error::VmSetup)
-    }
-
-    /// Creates the GIC (Global Interrupt Controller).
-    #[cfg(target_arch = "aarch64")]
-    pub fn setup_irqchip(&mut self, vcpu_count: u8) -> Result<()> {
-        self.irqchip_handle = Some(
-            arch::aarch64::gic::create_gic(&self.fd, vcpu_count.into()).map_err(Error::SetupGIC)?,
-        );
-        Ok(())
-    }
-
-    /// Gets a reference to the irqchip of the VM
-    #[allow(clippy::borrowed_box)]
-    #[cfg(target_arch = "aarch64")]
-    pub fn get_irqchip(&self) -> &Box<dyn GICDevice> {
-        self.irqchip_handle.as_ref().unwrap()
     }
 
     /// Gets a reference to the kvm file descriptor owned by this VM.
@@ -666,9 +569,6 @@ pub struct Vcpu {
     cpuid: CpuId,
     #[cfg(target_arch = "x86_64")]
     msr_list: MsrList,
-
-    #[cfg(target_arch = "aarch64")]
-    mpidr: u64,
 
     // The receiving end of events channel owned by the vcpu side.
     event_receiver: Receiver<VcpuEvent>,
@@ -805,6 +705,7 @@ impl Vcpu {
         })
     }
 
+<<<<<<< HEAD
     /// Constructs a new VCPU for `vm`.
     ///
     /// # Arguments
@@ -837,16 +738,12 @@ impl Vcpu {
             response_sender,
         })
     }
+=======
+>>>>>>> 8bc58d2 (Remove some arch specific code)
 
     /// Returns the cpu index as seen by the guest OS.
     pub fn cpu_index(&self) -> u8 {
         self.id
-    }
-
-    /// Gets the MPIDR register value.
-    #[cfg(target_arch = "aarch64")]
-    pub fn get_mpidr(&self) -> u64 {
-        self.mpidr
     }
 
     /// Sets a MMIO bus for this vcpu.
@@ -902,41 +799,6 @@ impl Vcpu {
         Ok(())
     }
 
-    #[cfg(target_arch = "aarch64")]
-    /// Configures an aarch64 specific vcpu.
-    ///
-    /// # Arguments
-    ///
-    /// * `vm_fd` - The kvm `VmFd` for this microvm.
-    /// * `guest_mem` - The guest memory used by this microvm.
-    /// * `kernel_load_addr` - Offset from `guest_mem` at which the kernel is loaded.
-    pub fn configure_aarch64(
-        &mut self,
-        vm_fd: &VmFd,
-        guest_mem: &GuestMemoryMmap,
-        kernel_load_addr: GuestAddress,
-    ) -> Result<()> {
-        let mut kvi: kvm_bindings::kvm_vcpu_init = kvm_bindings::kvm_vcpu_init::default();
-
-        // This reads back the kernel's preferred target type.
-        vm_fd
-            .get_preferred_target(&mut kvi)
-            .map_err(Error::VcpuArmPreferredTarget)?;
-        // We already checked that the capability is supported.
-        kvi.features[0] |= 1 << kvm_bindings::KVM_ARM_VCPU_PSCI_0_2;
-        // Non-boot cpus are powered off initially.
-        if self.id > 0 {
-            kvi.features[0] |= 1 << kvm_bindings::KVM_ARM_VCPU_POWER_OFF;
-        }
-
-        self.fd.vcpu_init(&kvi).map_err(Error::VcpuArmInit)?;
-        arch::aarch64::regs::setup_regs(&self.fd, self.id, kernel_load_addr.raw_value(), guest_mem)
-            .map_err(Error::REGSConfiguration)?;
-
-        self.mpidr = arch::aarch64::regs::read_mpidr(&self.fd).map_err(Error::REGSConfiguration)?;
-
-        Ok(())
-    }
 
     /// Moves the vcpu to its own thread and constructs a VcpuHandle.
     /// The handle can be used to control the remote vcpu.
@@ -1119,8 +981,6 @@ impl Vcpu {
                 }
                 VcpuExit::MmioWrite(addr, data) => {
                     if let Some(ref mmio_bus) = self.mmio_bus {
-                        #[cfg(target_arch = "aarch64")]
-                        self.check_boot_complete_signal(addr, data);
 
                         mmio_bus.write(0, addr, data);
                     }
@@ -1435,17 +1295,6 @@ mod tests {
             )
             .unwrap();
         }
-        #[cfg(target_arch = "aarch64")]
-        {
-            vcpu = Vcpu::new_aarch64(
-                1,
-                vm.fd(),
-                exit_evt,
-                super::super::super::TimestampUs::default(),
-            )
-            .unwrap();
-            vm.setup_irqchip(1).expect("Cannot setup irqchip");
-        }
 
         (vm, vcpu, gm)
     }
@@ -1517,26 +1366,6 @@ mod tests {
         assert!(vm.setup_irqchip().is_err());
     }
 
-    #[cfg(target_arch = "aarch64")]
-    #[test]
-    fn test_setup_irqchip() {
-        let kvm = KvmContext::new().unwrap();
-
-        let mut vm = Vm::new(kvm.fd(), None).expect("Cannot create new vm");
-        let vcpu_count = 1;
-        let _vcpu = Vcpu::new_aarch64(
-            1,
-            vm.fd(),
-            EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
-            super::super::TimestampUs::default(),
-        )
-        .unwrap();
-
-        vm.setup_irqchip(vcpu_count).expect("Cannot setup irqchip");
-        // Trying to setup two irqchips will result in EEXIST error.
-        assert!(vm.setup_irqchip(vcpu_count).is_err());
-    }
-
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn test_configure_vcpu() {
@@ -1562,41 +1391,6 @@ mod tests {
         vcpu_config.cpu_template = Some(CpuFeaturesTemplate::C3);
         assert!(vcpu
             .configure_x86_64(&vm_mem, GuestAddress(0), &vcpu_config)
-            .is_ok());
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    #[test]
-    fn test_configure_vcpu() {
-        let kvm = KvmContext::new().unwrap();
-        let gm = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x10000)]).unwrap();
-        let mut vm = Vm::new(kvm.fd(), None).expect("new vm failed");
-        assert!(vm.memory_init(&gm, kvm.max_memslots()).is_ok());
-
-        // Try it for when vcpu id is 0.
-        let mut vcpu = Vcpu::new_aarch64(
-            0,
-            vm.fd(),
-            EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
-            super::super::TimestampUs::default(),
-        )
-        .unwrap();
-
-        assert!(vcpu
-            .configure_aarch64(vm.fd(), &gm, GuestAddress(0))
-            .is_ok());
-
-        // Try it for when vcpu id is NOT 0.
-        let mut vcpu = Vcpu::new_aarch64(
-            1,
-            vm.fd(),
-            EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
-            super::super::TimestampUs::default(),
-        )
-        .unwrap();
-
-        assert!(vcpu
-            .configure_aarch64(vm.fd(), &gm, GuestAddress(0))
             .is_ok());
     }
 

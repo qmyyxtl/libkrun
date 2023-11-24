@@ -178,8 +178,6 @@ pub struct Vcpu {
     #[cfg_attr(all(test, target_arch = "aarch64"), allow(unused))]
     exit_evt: EventFd,
 
-    #[cfg(target_arch = "aarch64")]
-    mpidr: u64,
 
     #[allow(unused)]
     event_receiver: Receiver<VcpuEvent>,
@@ -650,12 +648,6 @@ mod tests {
             )
             .unwrap();
         }
-        #[cfg(target_arch = "aarch64")]
-        {
-            vcpu = Vcpu::new_aarch64(1, vm.fd(), exit_evt, super::super::TimestampUs::default())
-                .unwrap();
-            vm.setup_irqchip(1).expect("Cannot setup irqchip");
-        }
 
         (vm, vcpu, gm)
     }
@@ -726,26 +718,6 @@ mod tests {
         assert!(vm.setup_irqchip().is_err());
     }
 
-    #[cfg(target_arch = "aarch64")]
-    #[test]
-    fn test_setup_irqchip() {
-        let kvm = KvmContext::new().unwrap();
-
-        let mut vm = Vm::new(kvm.fd()).expect("Cannot create new vm");
-        let vcpu_count = 1;
-        let _vcpu = Vcpu::new_aarch64(
-            1,
-            vm.fd(),
-            EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
-            super::super::TimestampUs::default(),
-        )
-        .unwrap();
-
-        vm.setup_irqchip(vcpu_count).expect("Cannot setup irqchip");
-        // Trying to setup two irqchips will result in EEXIST error.
-        assert!(vm.setup_irqchip(vcpu_count).is_err());
-    }
-
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn test_configure_vcpu() {
@@ -774,40 +746,6 @@ mod tests {
             .is_ok());
     }
 
-    #[cfg(target_arch = "aarch64")]
-    #[test]
-    fn test_configure_vcpu() {
-        let kvm = KvmContext::new().unwrap();
-        let gm = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x10000)]).unwrap();
-        let mut vm = Vm::new(kvm.fd()).expect("new vm failed");
-        assert!(vm.memory_init(&gm, kvm.max_memslots()).is_ok());
-
-        // Try it for when vcpu id is 0.
-        let mut vcpu = Vcpu::new_aarch64(
-            0,
-            vm.fd(),
-            EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
-            super::super::TimestampUs::default(),
-        )
-        .unwrap();
-
-        assert!(vcpu
-            .configure_aarch64(vm.fd(), &gm, GuestAddress(0))
-            .is_ok());
-
-        // Try it for when vcpu id is NOT 0.
-        let mut vcpu = Vcpu::new_aarch64(
-            1,
-            vm.fd(),
-            EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
-            super::super::TimestampUs::default(),
-        )
-        .unwrap();
-
-        assert!(vcpu
-            .configure_aarch64(vm.fd(), &gm, GuestAddress(0))
-            .is_ok());
-    }
 
     #[test]
     fn test_kvm_context() {

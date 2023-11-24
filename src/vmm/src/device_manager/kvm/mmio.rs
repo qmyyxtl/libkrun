@@ -9,16 +9,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::{fmt, io};
 
-#[cfg(target_arch = "aarch64")]
-use arch::aarch64::DeviceInfoForFDT;
 use arch::DeviceType;
 use devices;
 
 use devices::BusDevice;
 use kernel::cmdline as kernel_cmdline;
 use kvm_ioctls::{IoEventAddress, VmFd};
-#[cfg(target_arch = "aarch64")]
-use utils::eventfd::EventFd;
 
 /// Errors for MMIO device manager.
 #[allow(clippy::enum_variant_names)]
@@ -159,6 +155,7 @@ impl MMIODeviceManager {
             .map_err(Error::Cmdline)
     }
 
+<<<<<<< HEAD
     #[cfg(target_arch = "aarch64")]
     /// Register an early console at some MMIO address.
     pub fn register_mmio_serial(
@@ -237,6 +234,8 @@ impl MMIODeviceManager {
         &self.id_to_dev_info
     }
 
+=======
+>>>>>>> 8bc58d2 (Remove some arch specific code)
     /// Gets the the specified device.
     pub fn get_device(
         &self,
@@ -261,19 +260,6 @@ pub struct MMIODeviceInfo {
     addr: u64,
     _irq: u32,
     _len: u64,
-}
-
-#[cfg(target_arch = "aarch64")]
-impl DeviceInfoForFDT for MMIODeviceInfo {
-    fn addr(&self) -> u64 {
-        self.addr
-    }
-    fn irq(&self) -> u32 {
-        self._irq
-    }
-    fn length(&self) -> u64 {
-        self._len
-    }
 }
 
 #[cfg(test)]
@@ -406,8 +392,6 @@ mod tests {
         let dummy = Arc::new(Mutex::new(DummyDevice::new()));
         #[cfg(target_arch = "x86_64")]
         assert!(builder::setup_interrupt_controller(&mut vm).is_ok());
-        #[cfg(target_arch = "aarch64")]
-        assert!(builder::setup_interrupt_controller(&mut vm, 1).is_ok());
 
         assert!(device_manager
             .register_virtio_device(vm.fd(), guest_mem, dummy, &mut cmdline, 0, "dummy")
@@ -427,8 +411,6 @@ mod tests {
         let mut cmdline = kernel_cmdline::Cmdline::new(4096);
         #[cfg(target_arch = "x86_64")]
         assert!(builder::setup_interrupt_controller(&mut vm).is_ok());
-        #[cfg(target_arch = "aarch64")]
-        assert!(builder::setup_interrupt_controller(&mut vm, 1).is_ok());
 
         for _i in arch::IRQ_BASE..=arch::IRQ_MAX {
             device_manager
