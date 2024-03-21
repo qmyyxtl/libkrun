@@ -705,42 +705,6 @@ impl Vcpu {
         })
     }
 
-<<<<<<< HEAD
-    /// Constructs a new VCPU for `vm`.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - Represents the CPU number between [0, max vcpus).
-    /// * `vm_fd` - The kvm `VmFd` for the virtual machine this vcpu will get attached to.
-    /// * `exit_evt` - An `EventFd` that will be written into when this vcpu exits.
-    /// * `create_ts` - A timestamp used by the vcpu to calculate its lifetime.
-    #[cfg(target_arch = "aarch64")]
-    pub fn new_aarch64(
-        id: u8,
-        vm_fd: &VmFd,
-        exit_evt: EventFd,
-        create_ts: TimestampUs,
-    ) -> Result<Self> {
-        let kvm_vcpu = vm_fd.create_vcpu(id as u64).map_err(Error::VcpuFd)?;
-        let (event_sender, event_receiver) = channel();
-        let (response_sender, response_receiver) = channel();
-
-        Ok(Vcpu {
-            fd: kvm_vcpu,
-            id,
-            create_ts,
-            mmio_bus: None,
-            exit_evt,
-            mpidr: 0,
-            event_receiver,
-            event_sender: Some(event_sender),
-            response_receiver: Some(response_receiver),
-            response_sender,
-        })
-    }
-=======
->>>>>>> 8bc58d2 (Remove some arch specific code)
-
     /// Returns the cpu index as seen by the guest OS.
     pub fn cpu_index(&self) -> u8 {
         self.id

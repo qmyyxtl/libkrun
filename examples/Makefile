@@ -1,6 +1,6 @@
 ARCH = $(shell uname -m)
 OS = $(shell uname -s)
-LDFLAGS_x86_64_Linux = -lkrun
+LDFLAGS_x86_64_Linux = -lkrun -L/usr/local/lib64
 LDFLAGS_aarch64_Linux = -lkrun -lfdt
 LDFLAGS_arm64_Darwin = -L/opt/homebrew/lib -lkrun -lfdt
 LDFLAGS_sev = -lkrun-sev
@@ -14,10 +14,13 @@ ROOTFS_DIR = rootfs_$(ROOTFS_DISTRO)
 ifeq ($(SEV),1)
     EXAMPLES := sev-attest sev-noattest
 else
-    EXAMPLES := chroot_vm
+    EXAMPLES := chroot_vm chroot_vm_debug
 endif
 
 all: $(EXAMPLES)
+
+chroot_vm_debug: chroot_vm.c
+	gcc -o $@ $< -g $(LDFLAGS_$(ARCH)_$(OS))
 
 chroot_vm: chroot_vm.c
 	gcc -o $@ $< $(CFLAGS_$(OS)) $(LDFLAGS_$(ARCH)_$(OS))

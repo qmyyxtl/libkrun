@@ -42,6 +42,7 @@ $(INIT_BINARY): init/init.c
 
 $(LIBRARY_RELEASE_$(OS)): $(INIT_BINARY)
 	cargo build --release $(FEATURE_FLAGS)
+
 ifeq ($(SEV),1)
 	mv target/release/libkrun.so target/release/$(KRUN_BASE_$(OS))
 endif
@@ -61,11 +62,12 @@ install: $(LIBRARY_RELEASE_$(OS))
 	install -m 755 $(LIBRARY_RELEASE_$(OS)) $(DESTDIR)$(PREFIX)/$(LIBDIR_$(OS))/
 	cd $(DESTDIR)$(PREFIX)/$(LIBDIR_$(OS))/ ; ln -s $(KRUN_BINARY_$(OS)) $(KRUN_SONAME_$(OS)) ; ln -s $(KRUN_SONAME_$(OS)) $(KRUN_BASE_$(OS))
 
-install-debug: $(LIBRARY_DEBUG_$(OS))
+installdebug: $(LIBRARY_DEBUG_$(OS))
 	install -d $(DESTDIR)$(PREFIX)/$(LIBDIR_$(OS))/
-	install -m 755 $(LIBRARY_DEBUG_$(OS)) $(DESTDIR)$(PREFIX)/$(LIBDIR_$(OS))/
 	install -d $(DESTDIR)$(PREFIX)/include
+	install -m 755 $(LIBRARY_DEBUG_$(OS)) $(DESTDIR)$(PREFIX)/$(LIBDIR_$(OS))/
 	install -m 644 $(LIBRARY_HEADER) $(DESTDIR)$(PREFIX)/include
+	cd $(DESTDIR)$(PREFIX)/$(LIBDIR_$(OS))/ ; ln -s $(KRUN_BINARY_$(OS)) $(KRUN_SONAME_$(OS)) ; ln -s $(KRUN_SONAME_$(OS)) $(KRUN_BASE_$(OS))
 
 clean:
 	rm -f $(INIT_BINARY)

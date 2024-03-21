@@ -16,7 +16,8 @@
 #include <sys/wait.h>
 
 
-char DEFAULT_KRUN_INIT[] = "/iwasm";
+// char DEFAULT_KRUN_INIT[] = "/iwasm";
+char DEFAULT_KRUN_INIT[] = "/bin/sh";
 
 void set_rlimits(const char *rlimits)
 {
